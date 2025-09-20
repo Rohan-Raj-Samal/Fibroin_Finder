@@ -5,6 +5,7 @@ import requests
 import time
 import gzip
 import shutil
+from modeller import *
 wgsfile = input("Enter your WGS file name (It should be in FASTA format with '.fasta' or '.fna' extension):")
 if ".fasta" in wgsfile or ".fna" in wgsfile:
     pass
@@ -30,7 +31,7 @@ aln_lngth = float(aln_lngth)
 
 if not os.path.exists(f'./{name}_output'):
     os.mkdir(f'./{name}_output')
-# os.system(f"augustus --species=tribolium  {wgsfile} > ./{name}_output/{name}.gff")
+os.system(f"augustus --species=tribolium  {wgsfile} > ./{name}_output/{name}.gff")
 print("***Augustus Run Completed***")
 with open(f"./{name}_output/{name}.gff","r") as r:
     data = r.readlines()
@@ -50,7 +51,7 @@ n = 0
 for i in range(len(start)):
     n = n+1
     for j in range(start[i],end[i]):
-        a = data[j].replace("# ","").replace("protein sequence = [",f">protein_{n}\n").replace("]","")
+        a = data[j].replace("# ","").replace("protein sequence = [",f">Protein_{n}\n").replace("]","")
         wh.write(a)
 wh.close()
 print("***GFF file is converted to FASTA file***")
@@ -64,9 +65,10 @@ ident = []
 aln = []
 for dat in data:
     a = dat.split("\t")
-    Prot.append(a[0])
+    Prot.append(a[0].replace("\n",""))
     ident.append(float(a[2]))
     aln.append(float(a[3]))
+
 carote_ser_blast = []
 for i in range(len(ident)):
     if ident[i] > pident and aln[i] > aln_lngth:
@@ -89,8 +91,9 @@ wh.close()
 print("***BLAST filteration is DONE***")
 
 wh_prpty = open(f"./{name}_output/{name}_fibroin_properties.tsv", 'w')
+wh_fibroin = open(f"./{name}_output/{name}_fibroin_protein.fasta", 'w')
 # WGS - Proteins - Blast - MW - G%A%S%T% - GA,GC,GT - GAGAGS - Structure
-wh_prpty.write("Protein_name\tMolecular_weight\tAliphatic_index\tInstability_index\tIso-electric_point\tGRAVY\tG%\tA%\tS%\tT%\tGA\tGS\tGT\tGAGAGS\n")
+wh_prpty.write("Protein_name\tMolecular_weight\tAliphatic_index\tInstability_index\tIso-electric_point\tGRAVY\tG%\tA%\tS%\tGA\tGS\tGT\tGAGAGS\n")
 try:
     with open(f"./{name}_output/{name}_fibroin_blast.fasta", 'r') as fh:
         data = fh.readlines()
@@ -166,7 +169,7 @@ for ac in range(len(acc)):
             add=add+mw[f"{base}"]
         except(KeyError):
             add=add
-    mwprot=add+18.01524
+    mwprot=(add+18.01524)/1000
 
     #aliphatic index
     a = protein_list[ac].count("A")
@@ -302,10 +305,10 @@ for ac in range(len(acc)):
     gravy=grv/plen
     # WGS - Proteins - Blast - MW - G%A%S%T% -  -  - Structure
     #G%A%S%T%
-    G_ = protein_list[ac].count("G")
-    A_ = protein_list[ac].count("A")
-    S_ = protein_list[ac].count("S")
-    T_ = protein_list[ac].count("T")
+    G_ = protein_list[ac].count("G")*100/len(protein_list[ac])
+    A_ = protein_list[ac].count("A")*100/len(protein_list[ac])
+    S_ = protein_list[ac].count("S")*100/len(protein_list[ac])
+    
 
     # GA,GS,GT
     GA = protein_list[ac].count("GA")
@@ -314,63 +317,77 @@ for ac in range(len(acc)):
 
     #GAGAGS
     GAGAGS = protein_list[ac].count("GAGAGS")
-    wh_prpty.write(f"{acc[ac]}\t{mwprot}\t{AI}\t{II}\t{iso_point}\t{gravy}\t{G_}\t{A_}\t{S_}\t{T_}\t{GA}\t{GS}\t{GT}\t{GAGAGS}\n")
+    wh_prpty.write(f"{acc[ac]}\t{mwprot}\t{AI}\t{II}\t{iso_point}\t{gravy}\t{G_}\t{A_}\t{S_}\t{GA}\t{GS}\t{GT}\t{GAGAGS}\n")
+    if GAGAGS > 1 and G_ > 35 and A_ > 25 and S_ > 8 and GA > 1 and GS > 1 and GT > 1:
+        wh_fibroin.write(f">Hevay_Chain_{acc[ac]}\n{protein_list[ac]}\n")
+    elif mwprot>20 and mwprot<30:
+        wh_fibroin.write(f">Light_Chain_{acc[ac]}\n{protein_list[ac]}\n")
 
+wh_fibroin.close()
 wh_prpty.close()
 
 
-# os.system(f"perl ./ps_scan.pl -d prosite.dat ./{name}_output/{name}_fibroin_blast.fasta > ./{name}_output/{name}_fibroin_prscan.txt")
-# print("***Prosite Scan is Done***")
-
-
-#Finding strucutres 
+os.system(f"cp ./aln_model.py ./{name}_output")
+os.system(f"cp ./build_model.py ./{name}_output")
 try:
-    with open(f"./{name}_output/{name}_fibroin_blast.fasta", 'r') as fh1:
-        data1 = fh1.readlines()
+    with open(f"./{name}_output/{name}_fibroin_protein.fasta", 'r') as fh:
+        data = fh.readlines()
 except IOError:
     print("Unable to open the file. Try again.")
     exit()
-if(">" not in data1[0]):
+if(">" not in data[0]):
         print("Invalid input\nMissing '>' from your fasta file")
         exit()
 accs=[]
-for i in data1:
+for i in data:
     if(">" in i):
-        a = i.replace(">","").replace("\n","")
-        accs.append(a)
+        a = i.replace(">","").replace("\n","").replace("|","_").replace(" ","_")
+        if len(a)>30:
+            accs.append(a[:30])
+        else:
+            accs.append(a)
 
-pos1=[]
-for i in range(len(data1)):
-    if(">" in data1[i]):
-        pos1.append(i)
-pos1.append(len(data1))
+pos=[]
+for i in range(len(data)):
+    if(">" in data[i]):
+        pos.append(i)
+pos.append(len(data))
 
-seq1=[]
+seq=[]
 
-for i in range(len(pos1)-1):   
-    for j in range(pos1[i]+1,pos1[i+1]):
-        seq1.append(data1[j])
-    seq1.append("\t")
+for i in range(len(pos)-1):   
+    for j in range(pos[i]+1,pos[i+1]):
+        seq.append(data[j])
+    seq.append("\t")
 
-protein_list1=[]
-gr1=[]
-for i in seq1:
+protein_list=[]
+gr=[]
+for i in seq:
     if i != "\t":
-        gr1.append(i)
+        gr.append(i)
     else:
-        protein_list1.append("".join(gr1).replace(' ', '').replace('\n', ''))
-        gr1=[]
-if gr1:
-    protein_list1.append("".join(gr1).replace(' ', '').replace('\n', ''))
+        protein_list.append("".join(gr).replace(' ', '').replace('\n', ''))
+        gr=[]
+if gr:
+    protein_list.append("".join(gr).replace(' ', '').replace('\n', ''))
 
+i = 0
 
 for i in range(len(accs)):
 
-    with open(f"./{name}_output/{accs[i]}.fasta","w") as wrrr:
-        wrrr.write(f">{accs[i]}\n{protein_list1[i]}")
+    with open(f"./{name}_output/{accs[i]}.fasta","w") as wh:
+        wh.write(f">{accs[i]}\n{protein_list[i]}")
+    wrt = open(f"./{name}_output/{accs[i]}.ali","w")
+    wrt.write(f">P1;{accs[i]}\nsequence:{accs[i]}:::::::0.00: 0.00\n{protein_list[i]}*")
+    wrt.close()
+    
     os.system(f"diamond blastp --query ./{name}_output/{accs[i]}.fasta --db ./fibroin_db/fibroin_db.dmnd -o ./{name}_output/{accs[i]}_blast.tsv --evalue {evalue} --quiet")
+    
+
 
 for i in range(len(accs)):
+    
+    print(os.getcwd())
     print(accs[i])
     try:
         with open(f'./{name}_output/{accs[i]}_blast.tsv', 'r') as fh:
@@ -384,8 +401,12 @@ for i in range(len(accs)):
         a = data[m].split("\n")
         b = a[0].split("\t")
         ident.append(float(b[2]))
-        c = b[1].split('|')
-        ac.append(c[1])
+        try:
+            c = b[1].split('|')
+            ac.append(c[1])
+        except(IndexError):
+            c = b[1].split('_')
+            ac.append(c[1])
 
     acc = []
     try:
@@ -397,13 +418,16 @@ for i in range(len(accs)):
         else:
             err = open(f"./{name}_output/{accs[i]}_empty.txt","w")
             err.write(f"No templates avialable for {accs[i]} when percent of identity is {pident}")
+            err.close()
             continue
     except(ValueError):
         err = open(f"./{name}_output/{accs[i]}_empty.txt","w")
         err.write(f"No templates avialable for {accs[i]} when percent of identity is {pident}")
+        err.close()
         continue
     # alph=[]
     uni =[]
+    templates = []
     for id in range(len(acc)):
         alph = f"https://alphafold.ebi.ac.uk/files/AF-{acc[id]}-F1-model_v4.pdb"
         a=requests.get(alph)
@@ -412,80 +436,18 @@ for i in range(len(accs)):
             f=open(f"./{name}_output/{accs[i]}_{acc[id]}_template.pdb","w")
             f.write(f2)
             f.close()
-            break
-    if "<Error>" in f2:
+            templates.append(f"{accs[i]}_{acc[id]}_template")
+        
+    if len(templates) == 0:
         err = open(f"./{name}_output/{accs[i]}_empty.txt","w")
-        err.write(f"No templates avialable for {accs[i]} when percent of identity is {pident}")
+        err.write(f"No templates avialable for {accs[i]} when percent of identity is {pi}")
+        err.close()
         continue
-
-    # if max(ident) == 100:
-    #     try:
-    #         src = f"./{name}_output/{accs[i]}_{acc[id]}_template.pdb"
-    #         dst = f"./{name}_output/{accs[i]}_predicted.pdb"
-    #         shutil.copyfile(src = src , dst = dst)
-    #         ramch(accs[i])
-    #         continue
-    #     except(FileNotFoundError):
-    #         continue
-
-            
         
-    token = "d44dd29a1fd66dc103c3eb3c414cb2e9dfa879fb"
+  
+    jn = " ".join(templates)
+    os.chdir(f"./{name}_output")
+    os.system(f"python aln_model.py -ali {accs[i]} -tmp {jn}")
+    os.system(f"python build_model.py -ali {accs[i]}-multiple_templates -tmp {jn}")
 
-    with open(f"./{name}_output/{accs[i]}.fasta","r") as fa:
-        fas = fa.readlines()
-
-    with open(f"./{name}_output/{accs[i]}_{acc[id]}_template.pdb", "r") as f:
-        template_coordinates = f.read()
- 
-    response = requests.post(
-        "https://swissmodel.expasy.org/user_template",
-        headers={ "Authorization": f"Token {token}" },
-        json={
-            "target_sequences": fas[1],
-            "template_coordinates": template_coordinates,
-            "project_title":f"{accs[i]}_{acc[id]}"
-            })
-    project_id = response.json()["project_id"]
-
-
-    while True:
-        
-        time.sleep(10)
-
-         
-        response = requests.get(
-            f"https://swissmodel.expasy.org/project/{ project_id }/models/summary/", 
-            headers={ "Authorization": f"Token {token}" })
-
-        
-        status = response.json()["status"]
-
-        print('Job status is now', status)
-
-        if status in ["COMPLETED", "FAILED"]:
-            break
-    response_object = response.json()
-
-    if response_object['status'] == 'COMPLETED':
-        for model in response_object['models']:
-            pdb_file = model['coordinates_url'] 
-
-            
-            b = requests.get(pdb_file)
-            if b.status_code == 200:
-                
-                with open(f"./{name}_output/{accs[i]}_predicted.pdb.gz", "wb") as f1:
-                    f1.write(b.content)
-
-                
-                with gzip.open(f"./{name}_output/{accs[i]}_predicted.pdb.gz", 'rb') as gz_file:
-                    with open(f"./{name}_output/{accs[i]}_predicted.pdb", 'wb') as pdb_file:
-                        shutil.copyfileobj(gz_file, pdb_file)
-            else:
-                print(f"Failed to download the PDB file. Status code: {b.status_code}")
-        os.remove(f"./{name}_output/{accs[i]}_predicted.pdb.gz")
-        
-    if response_object['status'] == 'FAILED':
-        err = open(f"./{name}_output/{accs[i]}_empty.txt","w")
-        err.write(f"No templates avialable for {accs[i]}")
+    os.chdir("../")
