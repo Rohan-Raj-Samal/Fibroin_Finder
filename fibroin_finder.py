@@ -2,11 +2,22 @@
 
 import os
 import requests
-import time
-import gzip
-import shutil
 from modeller import *
-wgsfile = input("Enter your WGS file name (It should be in FASTA format with '.fasta' or '.fna' extension):")
+import argparse  
+import warnings
+import os
+warnings.filterwarnings('ignore')
+parser = argparse.ArgumentParser(description='Please provide following arguments.')
+parser.add_argument("-f", "--input", type=str, required=True, help="Input: Enter your WGS file name (It should be in FASTA format with '.fasta' or '.fna' extension)")
+parser.add_argument("-e","--evalue", type=float, default=0.01, help="E-value: E-value for BLAST in structure prediction Default = 0.01")
+parser.add_argument("-i","--ident", type=float, default=0.01, help="Identity: Minimum Pecentage of Identity (0-100) Default = 60")
+parser.add_argument("-a","--alen", type=int, default=0.01, help="Alignment-Length: Minimum Alignment Length Default = 100")
+
+args = parser.parse_args()
+wgsfile = args.input
+evalue = args.evalue
+pident = args.ident
+aln_lngth = args.alen
 if ".fasta" in wgsfile or ".fna" in wgsfile:
     pass
 else:
@@ -14,24 +25,9 @@ else:
     exit()
 name = wgsfile.replace(".fasta","").replace(".fna","")
 
-
-evalue = input("""Enter e-value for BLASTp run-
-            10
-            1
-            0.1
-            0.01
-            0.001
-            0.0001
-Evalue:""")
-evalue = float(evalue)
-pident = input("""Minimum Pecentage of Identity (0-100):""")
-pident = float(pident)
-aln_lngth = input("Minimum Alignment Length:")
-aln_lngth = float(aln_lngth)
-
 if not os.path.exists(f'./{name}_output'):
     os.mkdir(f'./{name}_output')
-os.system(f"augustus --species=tribolium  {wgsfile} > ./{name}_output/{name}.gff")
+# os.system(f"augustus --species=tribolium  {wgsfile} > ./{name}_output/{name}.gff")
 print("***Augustus Run Completed***")
 with open(f"./{name}_output/{name}.gff","r") as r:
     data = r.readlines()
@@ -426,10 +422,11 @@ for i in range(len(accs)):
         err.close()
         continue
     # alph=[]
+    print(acc)
     uni =[]
     templates = []
     for id in range(len(acc)):
-        alph = f"https://alphafold.ebi.ac.uk/files/AF-{acc[id]}-F1-model_v4.pdb"
+        alph = f"https://alphafold.ebi.ac.uk/files/AF-{acc[id]}-F1-model_v6.pdb"
         a=requests.get(alph)
         f2=a.text
         if "<Error>" not in f2:
@@ -440,7 +437,7 @@ for i in range(len(accs)):
         
     if len(templates) == 0:
         err = open(f"./{name}_output/{accs[i]}_empty.txt","w")
-        err.write(f"No templates avialable for {accs[i]} when percent of identity is {pi}")
+        err.write(f"No templates avialable for {accs[i]} when percent of identity is {pident}")
         err.close()
         continue
         
